@@ -38,6 +38,32 @@ module OmniAuth
         { 'raw_info' => raw_info }
       end
 
+      def callback_phase
+        cookie = request.cookies["linkedin_oauth_#{options.consumer_key}"]
+        if !request.params["oauth_token"] && !request.params["oauth_verfier"] && cookie
+          begin
+            request_token = ::OAuth::RequestToken.new(consumer)
+            credentials = ::MultiJson.decode(cookie)
+            @access_token = request_token.get_access_token({}, {'xoauth_oauth2_access_token' => credentials["access_token"]})
+            self.env['omniauth.auth'] = auth_hash
+            call_app!
+          rescue ::Timeout::Error => e
+            fail!(:timeout, e)
+          rescue ::Net::HTTPFatalError, ::OpenSSL::SSL::SSLError => e
+            fail!(:service_unavailable, e)
+          rescue ::OAuth::Unauthorized => e
+            fail!(:invalid_credentials, e)
+          rescue ::MultiJson::DecodeError => e
+            fail!(:invalid_response, e)
+          rescue ::OmniAuth::NoSessionError => e
+            fail!(:session_expired, e)
+          end
+        else
+          super
+        end
+      end
+
+
       def raw_info
         @raw_info ||= MultiJson.decode(access_token.get("/v1/people/~:(#{options.fields.join(',')})?format=json").body)
       end
